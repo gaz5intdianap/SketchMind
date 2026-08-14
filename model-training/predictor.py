@@ -1,3 +1,4 @@
+from streamlit import image
 import tensorflow as tf
 import numpy as np
 from PIL import Image
@@ -59,20 +60,60 @@ class Predictor:
 
     def preprocess(self, image):
 
+    # Convert canvas to grayscale
         image = image.convert("L")
-
-        image = image.resize((28, 28))
-
         img = np.array(image)
 
-        # White drawing on black canvas
-        img = img.astype(np.float32) / 255.0
+    # Find pixels belonging to the drawing
+        coords = np.argwhere(img > 30)
 
-        img = np.expand_dims(img, axis=-1)
+    # Empty canvas
+        if coords.size == 0:
+            canvas = np.zeros((28, 28), dtype=np.float32)
 
-        img = np.expand_dims(img, axis=0)
+        else:
+            # Find bounding box of the drawing
+            y0, x0 = coords.min(axis=0)
+            y1, x1 = coords.max(axis=0) + 1
 
-        return img
+            cropped = img[y0:y1, x0:x1]
+
+            h, w = cropped.shape
+
+        # Make the drawing square
+            size = max(h, w)
+
+            square = np.zeros(
+                (size, size),
+                dtype=np.uint8
+            )
+
+        # Center drawing
+            y_offset = (size - h) // 2
+            x_offset = (size - w) // 2
+
+            square[
+                y_offset:y_offset + h,
+                x_offset:x_offset + w
+            ] = cropped
+
+        # Resize to model input
+            resized = Image.fromarray(square).resize(
+                (28, 28),
+                Image.Resampling.LANCZOS
+            )
+
+            canvas = np.array(resized).astype(
+                np.float32
+            ) / 255.0
+
+    # Add channel dimension
+        canvas = np.expand_dims(canvas, axis=-1)
+
+    # Add batch dimension
+        canvas = np.expand_dims(canvas, axis=0)
+
+        return canvas
 
     # -------------------------
     # Predict
