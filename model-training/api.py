@@ -8,8 +8,7 @@ import io
 import os
 import uuid
 import time
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import psycopg
 
 
 app = FastAPI(title="SketchMind API")
@@ -48,7 +47,7 @@ def get_connection():
             "DATABASE_URL environment variable is not configured."
         )
 
-    return psycopg2.connect(DATABASE_URL)
+    return psycopg.connect(DATABASE_URL)
 
 
 def init_database():
@@ -202,7 +201,7 @@ def save_score(entry: ScoreSubmission):
     try:
 
         with connection.cursor(
-            cursor_factory=RealDictCursor
+            row_factory=psycopg.rows.dict_row
         ) as cursor:
 
             cursor.execute(
@@ -283,7 +282,7 @@ def get_leaderboard():
     try:
 
         with connection.cursor(
-            cursor_factory=RealDictCursor
+            row_factory = psycopg.rows.dict_row
         ) as cursor:
 
             cursor.execute(
