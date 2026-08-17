@@ -6,7 +6,6 @@ import io
 
 app = FastAPI(title="SketchMind API")
 
-# Allow the frontend to communicate with Railway
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,7 +14,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load model once when the API starts
 predictor = Predictor()
 
 
@@ -38,40 +36,19 @@ def health():
 async def predict(file: UploadFile = File(...)):
 
     try:
-        # Read uploaded image
         image_bytes = await file.read()
 
-        # Open image
         image = Image.open(
             io.BytesIO(image_bytes)
         )
 
-        # Handle transparency consistently
-        if image.mode == "RGBA":
-            background = Image.new(
-                "RGB",
-                image.size,
-                (0, 0, 0)
-            )
+        image.load()
 
-            background.paste(
-                image,
-                mask=image.getchannel("A")
-            )
-
-            image = background
-
-        elif image.mode != "RGB":
-            image = image.convert("RGB")
-
-        # IMPORTANT:
-        # Predictor handles grayscale, cropping,
-        # centering and resizing.
         label, confidence = predictor.predict(image)
 
         return {
             "prediction": label,
-            "confidence": confidence
+            "confidence": float(confidence)
         }
 
     except Exception as e:
