@@ -6,3 +6,6 @@ numpy
 pandas
 pillow
 opencv-python-headless
+fastapi
+uvicorn
+python-multipart
