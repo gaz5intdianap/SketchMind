@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 from predictor import Predictor
@@ -6,7 +6,7 @@ import io
 
 app = FastAPI(title="SketchMind API")
 
-# Allow the Lovable/Vercel frontend to communicate with Railway
+# Allow the frontend to communicate with Railway
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -37,15 +37,46 @@ def health():
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
 
-    image_bytes = await file.read()
+    try:
+        # Read uploaded image
+        image_bytes = await file.read()
 
-    image = Image.open(
-        io.BytesIO(image_bytes)
-    )
+        # Open image
+        image = Image.open(
+            io.BytesIO(image_bytes)
+        )
 
-    label, confidence = predictor.predict(image)
+        # Handle transparency consistently
+        if image.mode == "RGBA":
+            background = Image.new(
+                "RGB",
+                image.size,
+                (0, 0, 0)
+            )
 
-    return {
-        "prediction": label,
-        "confidence": confidence
-    }
+            background.paste(
+                image,
+                mask=image.getchannel("A")
+            )
+
+            image = background
+
+        elif image.mode != "RGB":
+            image = image.convert("RGB")
+
+        # IMPORTANT:
+        # Predictor handles grayscale, cropping,
+        # centering and resizing.
+        label, confidence = predictor.predict(image)
+
+        return {
+            "prediction": label,
+            "confidence": confidence
+        }
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Prediction error: {str(e)}"
+        )
