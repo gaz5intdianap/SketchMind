@@ -9,4 +9,4 @@ opencv-python-headless
 fastapi
 uvicorn
 python-multipart
-psycopg
+psycopg==3.2.10
