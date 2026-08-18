@@ -8,7 +8,7 @@ import io
 import os
 import uuid
 import time
-import psycopg
+import redis
 
 
 app = FastAPI(title="SketchMind API")
@@ -35,58 +35,28 @@ predictor = Predictor()
 
 
 # --------------------------------------------------
-# DATABASE
+# REDIS DATABASE
 # --------------------------------------------------
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+REDIS_URL = os.getenv("REDIS_URL")
 
-print("DATABASE_URL configured:", bool(DATABASE_URL))
-print("DATABASE_URL starts with:", DATABASE_URL[:20] if DATABASE_URL else "NONE")
+print("REDIS_URL configured:", bool(REDIS_URL))
 
-
-def get_connection():
-    if not DATABASE_URL:
-        raise RuntimeError(
-            "DATABASE_URL environment variable is not configured."
-        )
-
-    print("Attempting PostgreSQL connection...")
-
-    connection = psycopg.connect(
-        DATABASE_URL,
-        connect_timeout=10,
+if not REDIS_URL:
+    raise RuntimeError(
+        "REDIS_URL environment variable is not configured."
     )
 
-    print("PostgreSQL connection established.")
+redis_client = redis.from_url(
+    REDIS_URL,
+    decode_responses=True
+)
 
-    return connection
+LEADERBOARD_KEY = "sketchmind:leaderboard"
 
-def init_database():
 
-    connection = get_connection()
-
-    try:
-        with connection.cursor() as cursor:
-
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS leaderboard (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    score INTEGER NOT NULL,
-                    correct INTEGER NOT NULL,
-                    rounds INTEGER NOT NULL,
-                    difficulty TEXT NOT NULL,
-                    best_streak INTEGER NOT NULL,
-                    played_at BIGINT NOT NULL
-                )
-                """
-            )
-
-        connection.commit()
-
-    finally:
-        connection.close()
+def get_redis():
+    return redis_client
 
 
 @app.on_event("startup")
@@ -147,34 +117,28 @@ def db_test():
 
     try:
 
-        print("Testing PostgreSQL connection...")
+        print("Testing Redis connection...")
 
-        connection = get_connection()
+        client = get_redis()
 
-        with connection.cursor() as cursor:
+        result = client.ping()
 
-            cursor.execute("SELECT 1")
-
-            result = cursor.fetchone()
-
-        connection.close()
-
-        print("PostgreSQL connection successful.")
+        print("Redis connection successful.")
 
         return {
             "status": "success",
-            "result": result
+            "redis": result
         }
 
     except Exception as e:
 
-        print(f"Database error: {e}")
+        print(f"Redis error: {e}")
 
         raise HTTPException(
             status_code=500,
-            detail=f"Database connection failed: {str(e)}"
+            detail=f"Redis connection failed: {str(e)}"
         )
-
+        
 # --------------------------------------------------
 # ML PREDICTION
 # --------------------------------------------------
@@ -238,79 +202,45 @@ def save_score(entry: ScoreSubmission):
 
     played_at = int(time.time() * 1000)
 
-    connection = get_connection()
+    client = get_redis()
 
     try:
 
-        with connection.cursor(
-            row_factory=psycopg.rows.dict_row
-        ) as cursor:
+        score_data = {
+            "id": score_id,
+            "name": name,
+            "score": entry.score,
+            "correct": entry.correct,
+            "rounds": entry.rounds,
+            "difficulty": entry.difficulty,
+            "bestStreak": entry.bestStreak,
+            "playedAt": played_at
+        }
 
-            cursor.execute(
-                """
-                INSERT INTO leaderboard
-                (
-                    id,
-                    name,
-                    score,
-                    correct,
-                    rounds,
-                    difficulty,
-                    best_streak,
-                    played_at
-                )
-                VALUES
-                (
-                    %s,
-                    %s,
-                    %s,
-                    %s,
-                    %s,
-                    %s,
-                    %s,
-                    %s
-                )
-                RETURNING
-                    id,
-                    name,
-                    score,
-                    correct,
-                    rounds,
-                    difficulty,
-                    best_streak AS "bestStreak",
-                    played_at AS "playedAt"
-                """,
-                (
-                    score_id,
-                    name,
-                    entry.score,
-                    entry.correct,
-                    entry.rounds,
-                    entry.difficulty,
-                    entry.bestStreak,
-                    played_at,
-                )
-            )
+        # Store complete score information
+        client.hset(
+            f"score:{score_id}",
+            mapping=score_data
+        )
 
-            result = cursor.fetchone()
+        # Add score to leaderboard
+        client.zadd(
+            LEADERBOARD_KEY,
+            {
+                score_id: entry.score
+            }
+        )
 
-        connection.commit()
-
-        return dict(result)
+        return score_data
 
     except Exception as e:
 
-        connection.rollback()
+        print(f"Redis error while saving score: {e}")
 
         raise HTTPException(
             status_code=500,
             detail=f"Could not save score: {str(e)}"
         )
-
-    finally:
-
-        connection.close()
-
 
 # --------------------------------------------------
 # GET LEADERBOARD
@@ -319,44 +249,56 @@ def save_score(entry: ScoreSubmission):
 @app.get("/leaderboard")
 def get_leaderboard():
 
-    connection = get_connection()
+    client = get_redis()
 
     try:
 
-        with connection.cursor(
-            row_factory = psycopg.rows.dict_row
-        ) as cursor:
+        # Get top 100 scores, highest first
+        score_ids = client.zrevrange(
+            LEADERBOARD_KEY,
+            0,
+            99
+        )
 
-            cursor.execute(
-                """
-                SELECT
-                    id,
-                    name,
-                    score,
-                    correct,
-                    rounds,
-                    difficulty,
-                    best_streak AS "bestStreak",
-                    played_at AS "playedAt"
-                FROM leaderboard
-                ORDER BY
-                    score DESC,
-                    played_at DESC
-                LIMIT 100
-                """
+        leaderboard = []
+
+        for score_id in score_ids:
+
+            score_data = client.hgetall(
+                f"score:{score_id}"
             )
 
-            results = cursor.fetchall()
+            if score_data:
 
-        return [dict(row) for row in results]
+                score_data["score"] = int(
+                    score_data["score"]
+                )
+
+                score_data["correct"] = int(
+                    score_data["correct"]
+                )
+
+                score_data["rounds"] = int(
+                    score_data["rounds"]
+                )
+
+                score_data["bestStreak"] = int(
+                    score_data["bestStreak"]
+                )
+
+                score_data["playedAt"] = int(
+                    score_data["playedAt"]
+                )
+
+                leaderboard.append(score_data)
+
+        return leaderboard
 
     except Exception as e:
+
+        print(f"Redis error while loading leaderboard: {e}")
 
         raise HTTPException(
             status_code=500,
             detail=f"Could not load leaderboard: {str(e)}"
         )
-
-    finally:
-
-        connection.close()
