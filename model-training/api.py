@@ -130,6 +130,43 @@ def health():
 
 
 # --------------------------------------------------
+# DATABASE TEST
+# --------------------------------------------------
+
+@app.get("/db-test")
+def db_test():
+
+    try:
+
+        print("Testing PostgreSQL connection...")
+
+        connection = get_connection()
+
+        with connection.cursor() as cursor:
+
+            cursor.execute("SELECT 1")
+
+            result = cursor.fetchone()
+
+        connection.close()
+
+        print("PostgreSQL connection successful.")
+
+        return {
+            "status": "success",
+            "result": result
+        }
+
+    except Exception as e:
+
+        print(f"Database error: {e}")
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database connection failed: {str(e)}"
+        )
+
+# --------------------------------------------------
 # ML PREDICTION
 # --------------------------------------------------
 
