@@ -40,6 +40,8 @@ predictor = Predictor()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+print("DATABASE_URL configured:", bool(DATABASE_URL))
+print("DATABASE_URL starts with:", DATABASE_URL[:20] if DATABASE_URL else "NONE")
 
 def get_connection():
     if not DATABASE_URL:
