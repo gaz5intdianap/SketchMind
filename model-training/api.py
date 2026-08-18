@@ -82,19 +82,7 @@ def init_database():
 
 @app.on_event("startup")
 def startup():
-    print("DATABASE_URL configured:", bool(DATABASE_URL))
-
-    if not DATABASE_URL:
-        print("DATABASE_URL is missing")
-        return
-
-    try:
-        print("Testing PostgreSQL connection...")
-        connection = psycopg.connect(DATABASE_URL)
-        print("PostgreSQL connection successful!")
-        connection.close()
-    except Exception as e:
-        print("POSTGRES ERROR:", type(e).__name__, str(e))
+    print("API startup successful.")
 
 
 # --------------------------------------------------
