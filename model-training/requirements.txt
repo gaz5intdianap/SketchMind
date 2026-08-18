@@ -9,4 +9,4 @@ opencv-python-headless
 fastapi
 uvicorn
 python-multipart
-psycopg[binary]
+psycopg[binary]==3.2.9
