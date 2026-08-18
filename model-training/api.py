@@ -43,14 +43,23 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 print("DATABASE_URL configured:", bool(DATABASE_URL))
 print("DATABASE_URL starts with:", DATABASE_URL[:20] if DATABASE_URL else "NONE")
 
+
 def get_connection():
     if not DATABASE_URL:
         raise RuntimeError(
             "DATABASE_URL environment variable is not configured."
         )
 
-    return psycopg.connect(DATABASE_URL)
+    print("Attempting PostgreSQL connection...")
 
+    connection = psycopg.connect(
+        DATABASE_URL,
+        connect_timeout=10,
+    )
+
+    print("PostgreSQL connection established.")
+
+    return connection
 
 def init_database():
 
