@@ -302,3 +302,129 @@ def get_leaderboard():
             status_code=500,
             detail=f"Could not load leaderboard: {str(e)}"
         )
+
+# --------------------------------------------------
+# ADMIN STATS - ALL SCORES
+# --------------------------------------------------
+
+@app.get("/admin/stats")
+def get_admin_stats():
+
+    client = get_redis()
+
+    try:
+
+        # Get ALL score IDs from Redis
+        score_ids = client.zrevrange(
+            LEADERBOARD_KEY,
+            0,
+            -1
+        )
+
+        all_scores = []
+
+        for score_id in score_ids:
+
+            score_data = client.hgetall(
+                f"score:{score_id}"
+            )
+
+            if score_data:
+
+                score_data["score"] = int(
+                    score_data["score"]
+                )
+
+                score_data["correct"] = int(
+                    score_data["correct"]
+                )
+
+                score_data["rounds"] = int(
+                    score_data["rounds"]
+                )
+
+                score_data["bestStreak"] = int(
+                    score_data["bestStreak"]
+                )
+
+                score_data["playedAt"] = int(
+                    score_data["playedAt"]
+                )
+
+                all_scores.append(score_data)
+
+        # --------------------------------------------------
+        # OVERALL STATISTICS
+        # --------------------------------------------------
+
+        total_games = len(all_scores)
+
+        if total_games > 0:
+
+            total_score = sum(
+                item["score"]
+                for item in all_scores
+            )
+
+            total_correct = sum(
+                item["correct"]
+                for item in all_scores
+            )
+
+            total_rounds = sum(
+                item["rounds"]
+                for item in all_scores
+            )
+
+            highest_score = max(
+                item["score"]
+                for item in all_scores
+            )
+
+            best_streak = max(
+                item["bestStreak"]
+                for item in all_scores
+            )
+
+            average_score = (
+                total_score / total_games
+            )
+
+            average_accuracy = (
+                (total_correct / total_rounds) * 100
+                if total_rounds > 0
+                else 0
+            )
+
+        else:
+
+            highest_score = 0
+            best_streak = 0
+            average_score = 0
+            average_accuracy = 0
+
+        return {
+            "totalGames": total_games,
+            "highestScore": highest_score,
+            "averageScore": round(
+                average_score,
+                2
+            ),
+            "averageAccuracy": round(
+                average_accuracy,
+                2
+            ),
+            "bestStreak": best_streak,
+            "allScores": all_scores
+        }
+
+    except Exception as e:
+
+        print(
+            f"Redis error while loading admin stats: {e}"
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not load admin stats: {str(e)}"
+        )
